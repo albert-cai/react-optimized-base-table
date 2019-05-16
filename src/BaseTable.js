@@ -97,6 +97,9 @@ class BaseTable extends React.PureComponent {
     this._horizontalScrollbarSize = 0;
     this._verticalScrollbarSize = 0;
     this._scrollbarPresenceChanged = false;
+    this.renderMainTableCell = this.renderMainTableCell.bind(this);
+    this._getEventHandlers = this._getEventHandlers.bind(this);
+    this.getColumnStyle = this.getColumnStyle.bind(this);
   }
 
   /**
@@ -266,6 +269,108 @@ class BaseTable extends React.PureComponent {
     return <TableRow {...rowProps} />;
   }
 
+  _getEventHandlers({ rowData, rowIndex, rowKey }) {
+    let onRowHover = this.columnManager.hasFrozenColumns() ? this._handleRowHover : null;
+    let handlers = this.props.eventHandlers || {};
+    const eventHandlers = {};
+    Object.keys(handlers).forEach(eventKey => {
+      const callback = handlers[eventKey];
+      if (typeof callback === 'function') {
+        eventHandlers[eventKey] = event => {
+          callback({ rowData, rowIndex, rowKey, event });
+        };
+      }
+    });
+
+    if (onRowHover) {
+      const mouseEnterHandler = eventHandlers['onMouseEnter'];
+      eventHandlers['onMouseEnter'] = event => {
+        onRowHover({
+          hovered: true,
+          rowData,
+          rowIndex,
+          rowKey,
+          event,
+        });
+        mouseEnterHandler && mouseEnterHandler(event);
+      };
+
+      const mouseLeaveHandler = eventHandlers['onMouseLeave'];
+      eventHandlers['onMouseLeave'] = event => {
+        onRowHover({
+          hovered: false,
+          rowData,
+          rowIndex,
+          rowKey,
+          event,
+        });
+        mouseLeaveHandler && mouseLeaveHandler(event);
+      };
+    }
+
+    return eventHandlers;
+  }
+
+  renderMainTableCell({ isScrolling, columns, column, columnIndex, rowData, rowIndex, style }) {
+    const rowKey = rowData[this.props.rowKey];
+    const depth = this._depthMap[rowKey] || 0;
+    if (column[ColumnManager.PlaceholderKey]) {
+      return (
+        <div
+          key={`row-${rowData[this.props.rowKey]}-cell-${column.key}-placeholder`}
+          className={this._prefixClass('row-cell-placeholder')}
+          style={this.columnManager.getColumnStyle(column.key)}
+        />
+      );
+    }
+
+    const { className, dataKey, dataGetter, cellRenderer } = column;
+    const TableCell = this._getComponent('TableCell');
+
+    const cellData = dataGetter
+      ? dataGetter({ columns, column, columnIndex, rowData, rowIndex })
+      : get(rowData, dataKey);
+    const cellProps = { isScrolling, cellData, columns, column, columnIndex, rowData, rowIndex, container: this };
+    const cell = renderElement(cellRenderer || <TableCell className={this._prefixClass('row-cell-text')} />, cellProps);
+
+    const cellCls = callOrReturn(className, { cellData, columns, column, columnIndex, rowData, rowIndex });
+    const cls = cn(this._prefixClass('row-cell'), cellCls, {
+      [this._prefixClass('row-cell--align-center')]: column.align === Alignment.CENTER,
+      [this._prefixClass('row-cell--align-right')]: column.align === Alignment.RIGHT,
+    });
+
+    const extraProps = callOrReturn(this.props.cellProps, { columns, column, columnIndex, rowData, rowIndex });
+    const { tagName, ...rest } = extraProps || {};
+    const Tag = tagName || 'div';
+    let expandIcon;
+    if (column.key === this.props.expandColumnKey) {
+      expandIcon = this.renderExpandIcon({ rowData, rowIndex, depth, onExpand: (expanded) => this._handleRowExpand({ expanded, rowData, rowIndex, rowKey }) });
+    }
+    const eventHandlers = this._getEventHandlers({ rowData, rowIndex, rowKey });
+    let width = this.columnManager.getColumnStyle(column.key).width;
+    return (
+      <Tag
+        role="gridcell"
+        key={`row-${rowData[this.props.rowKey]}-cell-${column.key}`}
+        {...rest}
+        className={cls}
+        style={{
+          ...style,
+          ...column.style,
+          width,
+        }}
+        {...eventHandlers}
+      >
+        {expandIcon}
+        {cell}
+      </Tag>
+    );
+  }
+
+  getColumnStyle(key) {
+    return this.columnManager.getColumnStyle(key);
+  }
+
   renderRowCell({ isScrolling, columns, column, columnIndex, rowData, rowIndex, expandIcon }) {
     if (column[ColumnManager.PlaceholderKey]) {
       return (
@@ -420,6 +525,9 @@ class BaseTable extends React.PureComponent {
       <GridTable
         {...rest}
         {...this.state}
+        isMainTable={true}
+        renderRowCell={this.renderMainTableCell}
+        getColumnStyle={this.getColumnStyle}
         className={this._prefixClass('table-main')}
         ref={this._setMainTableRef}
         data={this._data}
@@ -450,6 +558,7 @@ class BaseTable extends React.PureComponent {
       <GridTable
         {...rest}
         {...this.state}
+        getColumnStyle={this.getColumnStyle}
         containerStyle={this._getLeftTableContainerStyle(columnsWidth, width, containerHeight)}
         className={this._prefixClass('table-frozen-left')}
         ref={this._setLeftTableRef}
@@ -481,6 +590,7 @@ class BaseTable extends React.PureComponent {
       <GridTable
         {...rest}
         {...this.state}
+        getColumnStyle={this.getColumnStyle}
         containerStyle={this._getLeftTableContainerStyle(columnsWidth + scrollbarWidth, width, containerHeight)}
         className={this._prefixClass('table-frozen-right')}
         ref={this._setRightTableRef}
@@ -829,6 +939,14 @@ class BaseTable extends React.PureComponent {
 
     const column = this.columnManager.getColumn(key);
     this.props.onColumnResize({ column, width });
+    let resizingColumnIndex = this.props.columns.findIndex(item => item.key === key);
+    this.table.resetAfterColumnIndex(resizingColumnIndex);
+    if (this.leftTable) {
+      this.leftTable.resetAfterColumnIndex(0);
+    }
+    if (this.rightTable) {
+      this.rightTable.resetAfterColumnIndex(0);
+    }
   }
 
   _handleColumnResizeStart({ key }) {

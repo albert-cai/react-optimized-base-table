@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import cn from 'classnames';
-import { FixedSizeGrid as Grid } from 'react-window';
+import { VariableSizeGrid as Grid } from 'react-window';
 
 import Header from './TableHeader';
 
@@ -18,11 +18,17 @@ class GridTable extends React.PureComponent {
     this._handleItemsRendered = this._handleItemsRendered.bind(this);
 
     this.renderRow = this.renderRow.bind(this);
+    this.getRowHeight = this.getRowHeight.bind(this);
+    this.getColumnWidth = this.getColumnWidth.bind(this);
   }
 
   forceUpdateTable() {
     this.headerRef && this.headerRef.forceUpdate();
     this.bodyRef && this.bodyRef.forceUpdate();
+  }
+
+  resetAfterColumnIndex(index, shouldForceUpdate) {
+    this.bodyRef.resetAfterColumnIndex(index, shouldForceUpdate);
   }
 
   scrollToPosition(args) {
@@ -46,7 +52,26 @@ class GridTable extends React.PureComponent {
   renderRow(args) {
     const { data, columns, rowRenderer } = this.props;
     const rowData = data[args.rowIndex];
+    let column = columns[args.columnIndex];
+    if (this.props.isMainTable) {
+      return this.props.renderRowCell({ ...args, columns, column, rowData, });
+    }
     return rowRenderer({ ...args, columns, rowData });
+  }
+
+  getColumnWidth(index) {
+    if (!this.props.isMainTable) {
+      let width = 0;
+      this.props.columns.forEach(item => {
+        width += this.props.getColumnStyle(item.key).width
+      })
+      return width;
+    }
+    return this.props.getColumnStyle(this.props.columns[index].key).width;
+  }
+
+  getRowHeight() {
+    return this.props.rowHeight;
   }
 
   render() {
@@ -68,6 +93,7 @@ class GridTable extends React.PureComponent {
       // omit from rest
       style,
       onScrollbarPresenceChange,
+      isMainTable,
       ...rest
     } = this.props;
     const headerHeight = this._getHeaderHeight();
@@ -75,6 +101,7 @@ class GridTable extends React.PureComponent {
     const frozenRowsHeight = rowHeight * frozenRowCount;
     const cls = cn(`${classPrefix}__table`, className);
     const containerProps = containerStyle ? { style: containerStyle } : null;
+    const columnCount = isMainTable ? this.props.columns.length : 1;
     return (
       <div role="table" className={cls} {...containerProps}>
         <Grid
@@ -86,11 +113,11 @@ class GridTable extends React.PureComponent {
           frozenData={frozenData}
           width={width}
           height={Math.max(height - headerHeight - frozenRowsHeight, 0)}
-          rowHeight={rowHeight}
           rowCount={data.length}
           overscanRowsCount={overscanRowCount}
-          columnWidth={bodyWidth}
-          columnCount={1}
+          columnCount={columnCount}
+          columnWidth={this.getColumnWidth}
+          rowHeight={this.getRowHeight}
           overscanColumnsCount={0}
           useIsScrolling={useIsScrolling}
           hoveredRowKey={hoveredRowKey}
@@ -129,9 +156,9 @@ class GridTable extends React.PureComponent {
     this.bodyRef = ref;
   }
 
-  _itemKey({ rowIndex }) {
+  _itemKey({ rowIndex, columnIndex }) {
     const { data, rowKey } = this.props;
-    return data[rowIndex][rowKey];
+    return data[rowIndex][rowKey] + columnIndex;
   }
 
   _getHeaderHeight() {

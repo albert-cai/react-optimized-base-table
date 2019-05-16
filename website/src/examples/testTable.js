@@ -1,4 +1,4 @@
-const columns = generateColumns(20)
+const columns = generateColumns(200)
 let data = generateData(columns, 200)
 const expandColumnKey = 'column-0'
 for (let i = 0; i < 1000; i++) {
@@ -22,10 +22,9 @@ for (let i = 0; i < 1000; i++) {
   })
 }
 const treeData = unflatten(data)
-
 const fixedColumns = columns.map((column, columnIndex) => {
   let frozen
-  if (columnIndex < 1) frozen = Column.FrozenDirection.LEFT
+  if (columnIndex < 2) frozen = Column.FrozenDirection.LEFT
   return {
     ...column,
     frozen,
@@ -36,7 +35,6 @@ const fixedColumns = columns.map((column, columnIndex) => {
     },
   }
 })
-console.log(fixedColumns)
 
 export default () => (
   <Table
